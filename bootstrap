@@ -1,3 +1,22 @@
+function _denv_file() {
+    local denv_files
+    denv_files="${PWD}/.denv.yml ${HOME}/.denv.yml"
+    for denv_file in ${denv_files[@]};do
+      if [ -f "${denv_file}" ]; then
+        echo "${denv_file}"
+        return 0
+      fi
+    done
+    # Can't find files, return 1.
+    return 1
+}
+
+function denv_debug() {
+  echo "[INFO]: DENV_TAG: ${DENV_TAG:-latest}"
+  echo "[INFO]: DENV_IMAGE_TAG: ${DENV_IMAGE_TAG:-${DENV_TAG}}"
+  echo "[INFO]: DENV_FILE: $(_denv_file || echo 'not found' )"
+}
+
 function denv() {
   DENV_TAG=${DENV_TAG:-latest}
   local DENV_IMAGE=nodeintegration/denv
@@ -6,26 +25,32 @@ function denv() {
   shift
   local additional_envs_args=''
 
+  local DENV_FILE="$(_denv_file)"
+  if [ -z "${DENV_FILE}" ];then
+    echo "[ERROR]: unable to detect .denv.yml files, aborting..."
+    return 1
+  fi
+
   if [ -z "${DENV_CMD}" ]; then
     echo "[ERROR]: you must supply at least a command argument to denv!"
     return 1
   fi
 
-  if [ -f .denv.yml ]; then
+  if [ -f "${DENV_FILE}" ]; then
     local YQ=$(which yq)
 
     if [ -z "${YQ}" ]; then
       echo "#[INFO]: no local yq detected, determining config in denv container"
-      YQ="docker run --rm -v ${PWD}:/workspace ${DENV_IMAGE}:${DENV_TAG} yq"
+      YQ="docker run --rm -v ${DENV_FILE}:${DENV_FILE} ${DENV_IMAGE}:${DENV_TAG} yq"
     fi
 
     # Process global environment variables
-    local global_envs=$(${YQ} -r ".global.environment // [] | keys[] // empty" .denv.yml)
+    local global_envs=$(${YQ} -r ".global.environment // [] | keys[] // empty" "${DENV_FILE}")
     for e in ${global_envs}; do
       if [ ! -z ${!e+x} ]; then
         additional_envs_args+=" -e ${e}"
       else
-        local v=$(${YQ} -r ".global.environment.${e} // empty" .denv.yml)
+        local v=$(${YQ} -r ".global.environment.${e} // empty" "${DENV_FILE}")
         if [ -n "${v+set}" ] ; then
           additional_envs_args+=" -e ${e}=\"${v}\""
         fi
@@ -33,13 +58,13 @@ function denv() {
     done
 
     # Process command config
-    local cmd_config=$(${YQ} -r ".commands.${DENV_CMD} // empty" .denv.yml)
+    local cmd_config=$(${YQ} -r ".commands.${DENV_CMD} // empty" "${DENV_FILE}")
     if [ -n "${cmd_config}" ]; then
-      local image=$(${YQ} -r ".commands.${DENV_CMD}.image // empty" .denv.yml)
+      local image=$(${YQ} -r ".commands.${DENV_CMD}.image // empty" "${DENV_FILE}")
       DENV_IMAGE=${image:-$DENV_CMD}
-      local tag=$(${YQ} -r ".commands.${DENV_CMD}.tag // empty" .denv.yml)
+      local tag=$(${YQ} -r ".commands.${DENV_CMD}.tag // empty" "${DENV_FILE}")
       DENV_IMAGE_TAG=${tag:-latest}
-      local cmd=$(${YQ} -r ".commands.${DENV_CMD}.cmd // empty" .denv.yml)
+      local cmd=$(${YQ} -r ".commands.${DENV_CMD}.cmd // empty" "${DENV_FILE}")
       DENV_CMD=${cmd:-$DENV_CMD}
       shift
     fi
@@ -63,25 +88,26 @@ function denv() {
 }
 
 function denv-pull() {
-  if [ -f .denv.yml ]; then
+  local DENV_FILE="$(_denv_file)"
+  if [ -f "${DENV_FILE}" ]; then
     local YQ=$(which yq)
     local DENV_TAG=${DENV_TAG:-latest}
     local DENV_IMAGE=nodeintegration/denv
 
     if [ -z "${YQ}" ]; then
       echo "#[DEBUG]: no local yq detected, determining config in denv container"
-      YQ="docker run --rm -v ${PWD}:/workspace ${DENV_IMAGE}:${DENV_TAG} yq"
+      YQ="docker run --rm -v ${DENV_FILE}:${DENV_FILE} ${DENV_IMAGE}:${DENV_TAG} yq"
     fi
 
-    local commands=$(${YQ} -r ".commands | keys[] // empty" .denv.yml)
+    local commands=$(${YQ} -r ".commands | keys[] // empty" "${DENV_FILE}")
     for cmd in ${commands}; do
-      local image=$(${YQ} -r ".commands.${cmd}.image // empty" .denv.yml)
+      local image=$(${YQ} -r ".commands.${cmd}.image // empty" "${DENV_FILE}")
       image=${image:-$cmd}
-      local tag=$(${YQ} -r ".commands.${cmd}.tag // empty" .denv.yml)
+      local tag=$(${YQ} -r ".commands.${cmd}.tag // empty" "${DENV_FILE}")
       echo "#[INFO]: processing command: ${cmd} image: ${image} tag: ${tag}"
       docker pull ${image}:${tag}
     done
   else
-    echo "#[INFO]: no .denv.yml detected. nothing to do."
+    echo "#[INFO]: no "${DENV_FILE}" detected. nothing to do."
   fi
 }
