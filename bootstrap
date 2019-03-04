@@ -15,6 +15,14 @@ function denv_debug() {
   echo "[INFO]: DENV_TAG: ${DENV_TAG:-latest}"
   echo "[INFO]: DENV_IMAGE_TAG: ${DENV_IMAGE_TAG:-${DENV_TAG}}"
   echo "[INFO]: DENV_FILE: $(_denv_file || echo 'not found' )"
+
+  local YQ=$(which yq)
+  if [ -z "${YQ}" ]; then
+    echo "[INFO]: YQ: no local yq detected, defaulting to denv container"
+  else
+    echo "[INFO]: YQ: ${YQ}"
+  fi
+
 }
 
 function denv() {
@@ -40,7 +48,6 @@ function denv() {
     local YQ=$(which yq)
 
     if [ -z "${YQ}" ]; then
-      echo "#[INFO]: no local yq detected, determining config in denv container"
       YQ="docker run --rm -v ${DENV_FILE}:${DENV_FILE} ${DENV_IMAGE}:${DENV_TAG} yq"
     fi
 
