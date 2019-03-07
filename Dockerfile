@@ -3,6 +3,7 @@ MAINTAINER Brendan Beveridge <brendan@nodeintegration.com.au>
 RUN mkdir /workspace
 COPY boot /usr/local/bin/
 COPY bootstrap /workspace/
+COPY denv_parser.py /workspace/
 # Some essential build tools
 RUN apk add --no-cache curl jq \
     && pip install yq
