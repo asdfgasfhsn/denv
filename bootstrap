@@ -7,7 +7,7 @@ function _denv_file() {
         return 0
       fi
     done
-    # Can't find files, return 1.
+    # Can't find .denv.yml files, return 1.
     return 1
 }
 
@@ -22,7 +22,6 @@ function denv_debug() {
   else
     echo "[INFO]: YQ: ${YQ}"
   fi
-
 }
 
 function denv() {
@@ -35,8 +34,7 @@ function denv() {
 
   local DENV_FILE="$(_denv_file)"
   if [ -z "${DENV_FILE}" ];then
-    echo "[ERROR]: unable to detect .denv.yml files, aborting..."
-    return 1
+    echo "[INFO]: unable to detect a .denv.yml file..."
   fi
 
   if [ -z "${DENV_CMD}" ]; then
@@ -77,6 +75,18 @@ function denv() {
     fi
   fi
 
+  # Process command mount declarations
+  local additional_vol_mounts
+  local container_mounts=$(${YQ} -r ".commands.${DENV_CMD}.mounts // [] | keys[] // empty" "${DENV_FILE}")
+
+  if [ -z "${!container_mounts+x}" ]; then
+    for m in ${container_mounts}; do
+        local l=$(${YQ} -r ".commands.${DENV_CMD}.mounts.${m}.local // empty" "${DENV_FILE}")
+        local c=$(${YQ} -r ".commands.${DENV_CMD}.mounts.${m}.container // empty" "${DENV_FILE}")
+          additional_vol_mounts+=" -v ${l}:${c}"
+    done
+  fi
+
   DENV_INTERACTIVE=${DENV_INTERACTIVE:-true}
   DENV_EXTRA_OPTS=''
 
@@ -87,6 +97,7 @@ function denv() {
   docker run --rm \
     -u $(id -u):$(id -g) \
     -v ${PWD}:/workspace \
+    ${additional_vol_mounts} \
     ${DENV_EXTRA_OPTS} \
     ${additional_envs_args} \
     ${env_file_args} \
